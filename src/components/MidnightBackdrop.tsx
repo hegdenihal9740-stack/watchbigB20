@@ -16,7 +16,8 @@ export function MidnightBackdrop({ variant = "hero" }: { variant?: "hero" | "qui
         alt=""
         width={1920}
         height={1088}
-        fetchPriority="low"
+        loading="eager"
+        fetchPriority="high"
         decoding="async"
       />
       <svg className="flight-paths" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">

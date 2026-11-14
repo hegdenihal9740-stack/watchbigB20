@@ -8,6 +8,16 @@ const PASSWORD_RECOVERY_REQUEST_MAX_AGE_MS = 60 * 60 * 1000;
 
 type KeyValueStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
+function getBrowserStorage(storageName: "localStorage" | "sessionStorage"): Storage | null {
+  try {
+    const storage = globalThis[storageName];
+    if (!storage || typeof storage.getItem !== "function") return null;
+    return storage;
+  } catch {
+    return null;
+  }
+}
+
 export function getSafeReturnPath(
   value: string | null | undefined,
   fallback = DEFAULT_POST_AUTH_PATH,
@@ -152,35 +162,35 @@ export function consumeOAuthReturnPath(storage: KeyValueStorage, now = Date.now(
 }
 
 export function saveBrowserOAuthReturnPath(returnPath: string, now = Date.now()): void {
-  if (typeof window === "undefined") return;
-  saveOAuthReturnPath(localStorage, returnPath, now);
+  const local = getBrowserStorage("localStorage");
+  if (local) saveOAuthReturnPath(local, returnPath, now);
   try {
-    saveOAuthReturnPath(sessionStorage, returnPath, now);
+    const session = getBrowserStorage("sessionStorage");
+    if (session) saveOAuthReturnPath(session, returnPath, now);
   } catch {
     /* Some mobile browsers restrict session storage. */
   }
 }
 
 export function readBrowserOAuthReturnPath(now = Date.now()): string | null {
-  if (typeof window === "undefined") return null;
-  return (
-    readOAuthReturnPath(localStorage, now) ??
-    (() => {
-      try {
-        return readOAuthReturnPath(sessionStorage, now);
-      } catch {
-        return null;
-      }
-    })()
-  );
+  const local = getBrowserStorage("localStorage");
+  const localPath = local ? readOAuthReturnPath(local, now) : null;
+  if (localPath) return localPath;
+  try {
+    const session = getBrowserStorage("sessionStorage");
+    return session ? readOAuthReturnPath(session, now) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function consumeBrowserOAuthReturnPath(now = Date.now()): string | null {
-  if (typeof window === "undefined") return null;
   const returnPath = readBrowserOAuthReturnPath(now);
-  localStorage.removeItem(OAUTH_RETURN_STORAGE_KEY);
+  const local = getBrowserStorage("localStorage");
+  if (local) local.removeItem(OAUTH_RETURN_STORAGE_KEY);
   try {
-    sessionStorage.removeItem(OAUTH_RETURN_STORAGE_KEY);
+    const session = getBrowserStorage("sessionStorage");
+    if (session) session.removeItem(OAUTH_RETURN_STORAGE_KEY);
   } catch {
     /* Session storage is optional. */
   }
