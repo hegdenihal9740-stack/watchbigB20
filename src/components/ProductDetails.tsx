@@ -17,7 +17,6 @@ import { useEffect, useRef, useState } from "react";
 import { whatsappLink } from "@/lib/whatsapp";
 import { Reviews } from "@/components/Reviews";
 import { useCustomer } from "@/components/CustomerAccounts";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import steelJpg from "@/assets/watch-steel.jpg";
 import blackJpg from "@/assets/watch-black.jpg";
 import goldJpg from "@/assets/watch-gold.jpg";
@@ -55,34 +54,12 @@ import blackTryThumb from "@/assets/product-gallery-thumbnails/black-try-on.webp
 import goldTryThumb from "@/assets/product-gallery-thumbnails/gold-try-on.webp";
 import roseTryThumb from "@/assets/product-gallery-thumbnails/rosegold-try-on.webp";
 import { cardMeta } from "@/lib/watch-meta";
-const FEAT = "feat:";
-const isFeat = (s?: string) => !!s && s.startsWith(FEAT);
 const life: Record<string, string> = {
   steel: steelLife,
   black: blackLife,
   gold: goldLife,
   rosegold: roseLife,
 };
-function FeatureCard({ img, labels }: { img: string; labels: string[] }) {
-  const crops = ["50% 8%", "88% 50%", "50% 50%"];
-  return (
-    <div className="product-feat">
-      <div className="product-feat-disc" />
-      <img className="product-feat-main" src={img} alt="" />
-      <ul className="product-feat-list">
-        {labels.slice(0, 3).map((l, i) => (
-          <li key={l}>
-            <span
-              className="product-feat-circle"
-              style={{ backgroundImage: `url(${img})`, backgroundPosition: crops[i] }}
-            />
-            <span>{l}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
 const extra: Record<WatchTone, string[]> = {
   steel: [steelHand, steelJpg, steelTry],
@@ -150,7 +127,6 @@ export function ProductDetails({
     "images" in w && Array.isArray(w.images)
       ? w.images.filter((image): image is string => typeof image === "string" && image.length > 0)
       : [];
-  const featureImage = watchImages[w.id as keyof typeof watchImages] ?? productImages[0] ?? w.image;
   const stock = useStock();
   const left = stock?.[active];
   const price = getProductPrice(w.id);
@@ -158,16 +134,18 @@ export function ProductDetails({
   const priceLabel = price === undefined ? "Price unavailable" : `₹${usd(price)}`;
   const wish = useWishlist();
   const imgs = productImages.length
-    ? [...productImages, ...(specs.length ? [`${FEAT}${w.id}`] : [])]
+    ? productImages
     : [
         w.image,
-        ...(specs.length ? [`${FEAT}${w.id}`] : []),
         ...(life[w.id] ? [life[w.id]!] : []),
         ...(extra[w.id] ?? []),
       ];
-  const feat = <FeatureCard img={featureImage} labels={specs.map(({ value }) => value)} />;
   const [idx, setIdx] = useState(0);
   const [zoom, setZoom] = useState(false);
+  const isNearSlide = (i: number) => {
+    const distance = Math.abs(i - idx);
+    return distance <= 1 || distance === imgs.length - 1;
+  };
   const off = price === undefined ? 0 : Math.round((1 - price / m.list) * 100);
   const deliveryDate = new Date(Date.now() + 3 * 86400000).toLocaleDateString("en-US", {
     weekday: "short",
@@ -303,45 +281,23 @@ export function ProductDetails({
                 }}
               >
                 <div className="product-slider" ref={sliderRef} onScroll={onSlide}>
-                  {imgs.map((src, i) =>
-                    isFeat(src) ? (
-                      <div key={src} className="product-imgbox product-slide is-feat">
-                        {i === idx ? feat : null}
-                      </div>
-                    ) : (
-                      <div
-                        key={src}
-                        className={`product-imgbox product-slide is-zoomable ${i === idx ? "is-active" : ""} ${i === idx && zoom ? "is-zoomed" : ""}`}
-                        onClick={() => toggleImageZoom(i)}
-                      >
-                        <img
-                          src={i === idx ? src : undefined}
-                          alt={w.name}
-                          draggable={false}
-                          loading={i === 0 ? "eager" : "lazy"}
-                          fetchPriority={i === 0 ? "high" : "auto"}
-                          decoding="async"
-                        />
-                      </div>
-                    ),
-                  )}
+                  {imgs.map((src, i) => (
+                    <div
+                      key={src}
+                      className={`product-imgbox product-slide is-zoomable ${i === idx ? "is-active" : ""} ${i === idx && zoom ? "is-zoomed" : ""}`}
+                      onClick={() => toggleImageZoom(i)}
+                    >
+                      <img
+                        src={src}
+                        alt={w.name}
+                        draggable={false}
+                        loading={isNearSlide(i) ? "eager" : "lazy"}
+                        fetchPriority={i === idx ? "high" : "auto"}
+                        decoding="async"
+                      />
+                    </div>
+                  ))}
                 </div>
-                <button
-                  type="button"
-                  className="product-slide-nav is-prev"
-                  onClick={() => slideTo(idx - 1)}
-                  aria-label="Previous image"
-                >
-                  <ChevronLeft size={20} />
-                </button>
-                <button
-                  type="button"
-                  className="product-slide-nav is-next"
-                  onClick={() => slideTo(idx + 1)}
-                  aria-label="Next image"
-                >
-                  <ChevronRight size={20} />
-                </button>
                 <div className="product-dots">
                   {imgs.map((src, i) => (
                     <span key={src} className={i === idx ? "is-on" : ""} />
@@ -356,16 +312,12 @@ export function ProductDetails({
                     className={`product-thumb ${i === idx ? "is-active" : ""}`}
                     onClick={() => slideTo(i)}
                   >
-                    {isFeat(src) ? (
-                      <span className="product-thumb-vid">Key</span>
-                    ) : (
-                      <img
-                        src={galleryThumbByImage[src] ?? src}
-                        alt=""
-                        loading={i === idx ? "eager" : "lazy"}
-                        decoding="async"
-                      />
-                    )}
+                    <img
+                      src={galleryThumbByImage[src] ?? src}
+                      alt=""
+                      loading={i === idx ? "eager" : "lazy"}
+                      decoding="async"
+                    />
                   </button>
                 ))}
               </div>

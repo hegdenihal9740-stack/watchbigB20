@@ -89,6 +89,7 @@ function Index() {
         import("three/examples/jsm/environments/RoomEnvironment.js"),
       ]);
       if (disposed) return;
+      const gsapImport = import("gsap");
       const watches = Array.from(rootRef.current?.querySelectorAll<HTMLImageElement>(".watch-img") ?? []);
       cleanups.push(() => watches.forEach(watch => watch.style.removeProperty("--watch-proximity")));
       const root = rootRef.current;
@@ -301,7 +302,7 @@ function Index() {
 
       async function setupAnimation(scene: Scene) {
         if (disposed) return;
-        const { gsap } = await import("gsap");
+        const { gsap } = await gsapImport;
         if (disposed) return;
         const plane = scene.modelGroup;
         const jetCanvas = scene.renderer.domElement;
@@ -561,6 +562,7 @@ function Index() {
       jet.position.set(18 * pathScale(), -8, 0);
       const scene = new Scene(jet);
       scene.render();
+      scene.renderer.domElement.style.opacity = "1";
       void setupAnimation(scene).catch((error: unknown) => {
         console.error("Could not start the homepage flight animation", error);
       });
