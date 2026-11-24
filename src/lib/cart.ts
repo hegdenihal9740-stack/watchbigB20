@@ -159,6 +159,14 @@ export const cart = {
     persist();
     emit();
   },
+  useForUser(userId: string, snapshot: CartItem[]) {
+    if (!userId) throw new Error("A valid customer session is required to save this cart.");
+    userKey = userId;
+    items = normalizeItems(snapshot);
+    revision += 1;
+    persist();
+    emit();
+  },
   setOpen(v: boolean) {
     openState = v;
     emit();

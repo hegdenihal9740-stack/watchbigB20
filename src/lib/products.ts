@@ -38,6 +38,18 @@ export function applyProducts(rows: ProductRow[]) {
       list.splice(i, 1);
       continue;
     }
+    const watch = list[i]!;
+    watch["name"] = row.name;
+    watch["finish"] = row.finish;
+    watch["image"] = row.image_url || originalWatches[i]?.image;
+    watch["images"] =
+      Array.isArray(row.images) && row.images.length
+        ? row.images
+        : [row.image_url || originalWatches[i]?.image].filter(
+            (image): image is string => typeof image === "string" && image.length > 0,
+          );
+    watch["description"] = row.description;
+    watch["details"] = row.details.length ? row.details : originalWatches[i]?.details;
     (prices as Record<string, number>)[id] = row.price;
     (cardMeta as Record<string, unknown>)[id] = {
       ...(originalCardMeta as Record<string, Record<string, unknown>>)[id],
@@ -60,11 +72,6 @@ export function applyProducts(rows: ProductRow[]) {
     (prices as Record<string, number>)[id] = r.price;
     (cardMeta as Record<string, unknown>)[id] = {
       list: Math.max(r.list_price, r.price),
-      rating: 4.5,
-      reviews: 0,
-      bought: "New",
-      badge: "New arrival",
-      specs: r.details.slice(0, 3),
     };
     (watchCloseups as Record<string, unknown>)[id] = [0, 1, 2].map((n) => ({
       title: r.details[n] ?? r.name,

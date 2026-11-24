@@ -3,7 +3,7 @@ import { goBackOrTo } from '@/lib/back';
 import type { ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import steel from '@/assets/watch-steel.jpg';
+import steel from '@/assets/watch-steel.webp';
 import bigBLogoDark from '@/assets/big-b-logo-dark.png';
 
 export function AccountLayout({ title, children }: { title: string; children: ReactNode }) {

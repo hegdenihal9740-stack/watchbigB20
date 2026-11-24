@@ -2,10 +2,10 @@ import watchSteel from '@/assets/watch-steel.webp';
 import watchBlack from '@/assets/watch-black.webp';
 import watchGold from '@/assets/watch-gold.webp';
 import watchRosegold from '@/assets/watch-rosegold.webp';
-import watchSteelCard from '@/assets/watch-steel.jpg';
-import watchBlackCard from '@/assets/watch-black.jpg';
-import watchGoldCard from '@/assets/watch-gold.jpg';
-import watchRosegoldCard from '@/assets/watch-rosegold.jpg';
+import watchSteelCard from '@/assets/watch-steel-thumb.webp';
+import watchBlackCard from '@/assets/watch-black-thumb.webp';
+import watchGoldCard from '@/assets/watch-gold-thumb.webp';
+import watchRosegoldCard from '@/assets/watch-rosegold-thumb.webp';
 
 export const watches = [
   { id: 'steel', name: 'Steel Diver', finish: 'Brushed steel', image: watchSteel, description: 'Cool brushed metal, a dark dial and a sculpted bracelet. A study in sharp contrasts.', details: ['Dark dial', 'Date window', 'Linked bracelet'] },

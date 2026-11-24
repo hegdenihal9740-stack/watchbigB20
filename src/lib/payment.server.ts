@@ -9,6 +9,7 @@ import { STORE_CONTACT } from "@/lib/store-info";
 
 export type PaymentAddress = {
   name: string;
+  email?: string | undefined;
   mobile: string;
   address: string;
   locality?: string | undefined;
@@ -61,6 +62,9 @@ export function validateAddress(address: PaymentAddress): PaymentAddress {
     !address ||
     typeof address.name !== "string" ||
     !address.name.trim() ||
+    (address.email !== undefined &&
+      (typeof address.email !== "string" ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address.email.trim()))) ||
     typeof address.mobile !== "string" ||
     !/^[6-9]\d{9}$/.test(address.mobile) ||
     typeof address.address !== "string" ||
@@ -74,7 +78,10 @@ export function validateAddress(address: PaymentAddress): PaymentAddress {
   ) {
     throw new Error("Please provide a valid delivery address before paying");
   }
-  return address;
+  return {
+    ...address,
+    ...(address.email ? { email: address.email.trim().toLowerCase() } : {}),
+  };
 }
 
 export async function createCodOrder(
@@ -105,7 +112,7 @@ export async function createCodOrder(
   }
   const notificationInput = {
     orderId: id,
-    email,
+    email: email ?? address.email ?? null,
     name: address.name,
     mobile: address.mobile,
     total,

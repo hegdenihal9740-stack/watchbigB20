@@ -66,19 +66,33 @@ function AccountPage() {
   const { user } = useCustomer();
   const [tab, setTab] = useState<"home" | "orders" | "wishlist">(requestedTab ?? "home");
   const [orders, setOrders] = useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState(false);
+  const [orderReload, setOrderReload] = useState(0);
   const [open, setOpen] = useState<string | null>(requestedOrder ?? null);
   const wish = useWishlist();
   useEffect(() => {
     let on = true;
+    setOrdersLoading(true);
+    setOrdersError(false);
     void loadOrders()
       .then((o) => {
-        if (on) setOrders(o);
+        if (on) {
+          setOrders(o);
+          setOrdersLoading(false);
+        }
       })
-      .catch(() => {});
+      .catch((error: unknown) => {
+        console.error("[Orders] Could not load customer orders", error);
+        if (on) {
+          setOrdersError(true);
+          setOrdersLoading(false);
+        }
+      });
     return () => {
       on = false;
     };
-  }, [user?.id]);
+  }, [orderReload, user?.id]);
   useEffect(() => {
     if (requestedTab) setTab(requestedTab);
     if (requestedOrder) setOpen(requestedOrder);
@@ -114,11 +128,19 @@ function AccountPage() {
               </span>
               <div>
                 <p className="acc-hello">Hello, {name.split(" ")[0]}</p>
-                <p className="product-muted">{user?.email ?? "Sign in to sync your account"}</p>
+                <p className="product-muted">
+                  {user?.is_anonymous
+                    ? "Guest orders are saved on this browser. Sign out or clear browser data and you may lose access."
+                    : user?.email ?? "Sign in to sync your account"}
+                </p>
               </div>
-              <AuthLink profile={!!user} className="acc-edit">
-                {user ? "Edit profile" : "Login"}
-              </AuthLink>
+              {user?.is_anonymous ? (
+                <span className="acc-edit">Guest checkout</span>
+              ) : (
+                <AuthLink profile={!!user} className="acc-edit">
+                  {user ? "Edit profile" : "Login"}
+                </AuthLink>
+              )}
             </section>
             <div className="acc-quick">
               <button type="button" className="acc-card acc-tile" onClick={() => setTab("orders")}>
@@ -168,7 +190,16 @@ function AccountPage() {
           <>
             {back}
             <h2 className="acc-h">My orders</h2>
-            {orders.length === 0 ? (
+            {ordersLoading ? (
+              <p className="acc-card product-muted" role="status">Loading your order tracking…</p>
+            ) : ordersError ? (
+              <p className="acc-card product-muted" role="alert">
+                Orders could not be loaded.{" "}
+                <button type="button" className="co-change" onClick={() => setOrderReload((n) => n + 1)}>
+                  Try again
+                </button>
+              </p>
+            ) : orders.length === 0 ? (
               <p className="acc-card product-muted">No orders yet.</p>
             ) : (
               orders.map((o) => {

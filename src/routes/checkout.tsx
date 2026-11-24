@@ -14,7 +14,6 @@ import {
 import { whatsappLink } from "@/lib/whatsapp";
 import { toast } from "sonner";
 import { ShopHeader } from "@/components/ShopHeader";
-import { AuthLink } from "@/components/AuthLink";
 import { cart, getProductPrice, useCart } from "@/lib/cart";
 import {
   checkRazorpayPaymentStatus,
@@ -28,6 +27,7 @@ import { ensureProducts } from "@/lib/products";
 import { useCustomer } from "@/components/CustomerAccounts";
 import { useStock } from "@/lib/inventory";
 import { createIdempotencyKey } from "@/lib/idempotency-key";
+import { supabase } from "@/integrations/supabase/client";
 import {
   formatStreetAddress,
   getAddressCity,
@@ -37,6 +37,7 @@ import {
 
 type Address = {
   name: string;
+  email: string;
   mobile: string;
   pincode: string;
   locality: string;
@@ -48,6 +49,7 @@ type Address = {
 };
 const EMPTY: Address = {
   name: "",
+  email: "",
   mobile: "",
   pincode: "",
   locality: "",
@@ -211,7 +213,7 @@ function Checkout() {
     else setSingle(Math.max(1, q));
   };
   const [a, setA] = useState<Address>(EMPTY);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   const [placed, setPlaced] = useState<{
     id: string;
     total: number;
@@ -235,7 +237,13 @@ function Checkout() {
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
   const { user, ready } = useCustomer();
-  const stock = useStock();
+  const checkoutUserIdRef = useRef(user?.id ?? null);
+  const guestSessionPromiseRef = useRef<Promise<void> | null>(null);
+  useEffect(() => {
+    checkoutUserIdRef.current = user?.id ?? null;
+  }, [user]);
+  const inventory = useStock();
+  const stock = inventory.data;
   const [codOk, setCodOk] = useState(false);
   const activeItemsKey = checkoutItemsKey(lines);
   const activePaymentAttempt =
@@ -246,7 +254,7 @@ function Checkout() {
   useEffect(() => {
     try {
       const r = localStorage.getItem(KEY);
-      if (r) setA(JSON.parse(r) as Address);
+      if (r) setA({ ...EMPTY, ...(JSON.parse(r) as Partial<Address>) });
     } catch {
       /* ignore */
     }
@@ -324,13 +332,14 @@ function Checkout() {
   const saveAddress = () => {
     if (
       !a.name.trim() ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email.trim()) ||
       !/^[6-9]\d{9}$/.test(a.mobile) ||
       !/^\d{6}$/.test(a.pincode) ||
       !a.address.trim() ||
       !a.city.trim() ||
       !a.state.trim()
     ) {
-      toast.error("Fill name, 10-digit mobile, 6-digit pincode, address, city and state");
+      toast.error("Fill a valid email, name, 10-digit mobile, 6-digit pincode and full address");
       return;
     }
     localStorage.setItem(KEY, JSON.stringify(a));
@@ -353,6 +362,7 @@ function Checkout() {
         orderId: string;
         total: number;
         count: number;
+        items: CheckoutLine[];
         clearCart: boolean;
         paymentMethod: "razorpay";
         status: string;
@@ -362,12 +372,13 @@ function Checkout() {
       if (result.status === "paid") {
         if (result.clearCart) cart.clear();
         try {
-          if (user) {
-            if (localStorage.getItem(razorpayPendingKey(user.id)) === result.orderId) {
-              localStorage.removeItem(razorpayPendingKey(user.id));
+          const userId = checkoutUserIdRef.current;
+          if (userId) {
+            if (localStorage.getItem(razorpayPendingKey(userId)) === result.orderId) {
+              localStorage.removeItem(razorpayPendingKey(userId));
             }
-            if (localStorage.getItem(razorpayDismissedPendingKey(user.id)) === result.orderId) {
-              localStorage.removeItem(razorpayDismissedPendingKey(user.id));
+            if (localStorage.getItem(razorpayDismissedPendingKey(userId)) === result.orderId) {
+              localStorage.removeItem(razorpayDismissedPendingKey(userId));
             }
           }
         } catch (error) {
@@ -386,14 +397,15 @@ function Checkout() {
       } else if (result.status === "failed") {
         let isDismissed = false;
         try {
-          if (user) {
+          const userId = checkoutUserIdRef.current;
+          if (userId) {
             isDismissed =
-              localStorage.getItem(razorpayDismissedPendingKey(user.id)) === result.orderId;
-            if (localStorage.getItem(razorpayPendingKey(user.id)) === result.orderId) {
-              localStorage.removeItem(razorpayPendingKey(user.id));
+              localStorage.getItem(razorpayDismissedPendingKey(userId)) === result.orderId;
+            if (localStorage.getItem(razorpayPendingKey(userId)) === result.orderId) {
+              localStorage.removeItem(razorpayPendingKey(userId));
             }
             if (isDismissed) {
-              localStorage.removeItem(razorpayDismissedPendingKey(user.id));
+              localStorage.removeItem(razorpayDismissedPendingKey(userId));
             }
           }
         } catch (error) {
@@ -432,9 +444,10 @@ function Checkout() {
       } else {
         let isDismissed = false;
         try {
+          const userId = checkoutUserIdRef.current;
           isDismissed =
-            user !== null &&
-            localStorage.getItem(razorpayDismissedPendingKey(user.id)) === result.orderId;
+            userId !== null &&
+            localStorage.getItem(razorpayDismissedPendingKey(userId)) === result.orderId;
         } catch (error) {
           console.error("[Razorpay] Could not read dismissed pending notice", error);
         }
@@ -452,7 +465,7 @@ function Checkout() {
         }
       }
     },
-    [user],
+    [],
   );
   const refreshRazorpayPayment = useCallback(
     async (orderId: string) => {
@@ -500,7 +513,8 @@ function Checkout() {
 
   const launchRazorpayCheckout = async (order: RazorpayCheckoutOrder) => {
     try {
-      if (user) localStorage.setItem(razorpayPendingKey(user.id), order.orderId);
+      const userId = checkoutUserIdRef.current;
+      if (userId) localStorage.setItem(razorpayPendingKey(userId), order.orderId);
     } catch (error) {
       console.error("[Razorpay] Could not store payment recovery ID", error);
     }
@@ -522,8 +536,9 @@ function Checkout() {
     };
     const refreshCheckoutAfterDismissal = () => {
       try {
-        if (user) {
-          localStorage.setItem(razorpayDismissedPendingKey(user.id), order.orderId);
+        const userId = checkoutUserIdRef.current;
+        if (userId) {
+          localStorage.setItem(razorpayDismissedPendingKey(userId), order.orderId);
         }
       } catch (error) {
         console.error("[Razorpay] Could not save checkout dismissal state", error);
@@ -629,6 +644,31 @@ function Checkout() {
     }
   };
 
+  const ensureCheckoutSession = async () => {
+    if (user) {
+      checkoutUserIdRef.current = user.id;
+      return;
+    }
+    if (checkoutUserIdRef.current) return;
+    if (!ready) throw new Error("Please wait while checkout finishes loading.");
+    if (!guestSessionPromiseRef.current) {
+      guestSessionPromiseRef.current = (async () => {
+        const { data, error } = await supabase.auth.signInAnonymously();
+        if (error || !data.user) {
+          console.error("[Checkout] Could not start a guest session", error);
+          throw new Error(
+            "Guest checkout is unavailable. Please sign in, or ask BIG-B to enable guest checkout.",
+          );
+        }
+        checkoutUserIdRef.current = data.user.id;
+        cart.useForUser(data.user.id, c.items);
+      })().finally(() => {
+        guestSessionPromiseRef.current = null;
+      });
+    }
+    await guestSessionPromiseRef.current;
+  };
+
   const placeOrder = async () => {
     if (lines.length === 0) {
       toast.error("Your cart is empty");
@@ -640,8 +680,8 @@ function Checkout() {
       );
       return;
     }
-    if (!user) {
-      toast.error("Please sign in to place your order");
+    if (inventory.loading || stock === null) {
+      toast.error("Current stock could not be verified. Please retry in a moment.");
       return;
     }
     if (short.length) {
@@ -673,6 +713,15 @@ function Checkout() {
       toast.error("Please confirm you will answer our confirmation call");
       return;
     }
+    if (!user && checkoutUserIdRef.current === null) {
+      try {
+        await ensureCheckoutSession();
+      } catch (error) {
+        console.error("[Checkout] Could not prepare guest checkout", error);
+        toast.error(error instanceof Error ? error.message : "Could not start guest checkout.");
+        return;
+      }
+    }
     if (paymentMethod === "razorpay") {
       try {
         await startRazorpayCheckout();
@@ -703,6 +752,7 @@ function Checkout() {
     return (
       <main className="shop-page co-checkout-page">
         <ShopHeader />
+        <h1 className="sr-only">Checkout</h1>
         <div className="co-grid">
           <section className="co-step">
             <h2>Your cart is empty</h2>
@@ -718,8 +768,9 @@ function Checkout() {
   return (
     <main className="shop-page co-checkout-page">
       <ShopHeader />
+      <h1 className="sr-only">Checkout</h1>
       <div className="co-grid">
-        <div className="co-steps">
+        <div className="co-steps" role="group" aria-label="Checkout steps">
           <section className="co-step">
             <h2>
               <span>1</span> Delivery address
@@ -746,13 +797,28 @@ function Checkout() {
                 <input
                   className="shop-input"
                   placeholder="Full name"
+                  aria-label="Full name"
+                  autoComplete="name"
                   value={a.name}
                   onChange={set("name")}
                 />
                 <input
                   className="shop-input"
+                  placeholder="Email for order updates"
+                  aria-label="Email for order updates"
+                  type="email"
+                  autoComplete="email"
+                  maxLength={254}
+                  value={a.email}
+                  onChange={set("email")}
+                />
+                <input
+                  className="shop-input"
                   placeholder="10-digit mobile number"
-                  inputMode="numeric"
+                  type="tel"
+                  aria-label="10-digit mobile number"
+                  autoComplete="tel"
+                  inputMode="tel"
                   maxLength={10}
                   value={a.mobile}
                   onChange={(e) => setA({ ...a, mobile: e.target.value.replace(/\D/g, "") })}
@@ -760,6 +826,8 @@ function Checkout() {
                 <input
                   className="shop-input"
                   placeholder="Pincode"
+                  aria-label="6-digit pincode"
+                  autoComplete="postal-code"
                   inputMode="numeric"
                   maxLength={6}
                   value={a.pincode}
@@ -768,6 +836,8 @@ function Checkout() {
                 <input
                   className="shop-input"
                   placeholder="Locality"
+                  aria-label="Locality"
+                  autoComplete="address-level3"
                   value={a.locality}
                   onChange={set("locality")}
                 />
@@ -775,24 +845,31 @@ function Checkout() {
                   className="shop-input co-wide"
                   rows={3}
                   placeholder="Address (house no, building, street, area)"
+                  aria-label="Street address, including house number and area"
+                  autoComplete="address-line1"
                   value={a.address}
                   onChange={set("address")}
                 />
                 <input
                   className="shop-input"
                   placeholder="City / District / Town"
+                  aria-label="City, district, or town"
+                  autoComplete="address-level2"
                   value={a.city}
                   onChange={set("city")}
                 />
                 <input
                   className="shop-input"
                   placeholder="State"
+                  aria-label="State"
+                  autoComplete="address-level1"
                   value={a.state}
                   onChange={set("state")}
                 />
                 <input
                   className="shop-input co-wide"
                   placeholder="Landmark (optional)"
+                  aria-label="Landmark (optional)"
                   value={a.landmark}
                   onChange={set("landmark")}
                 />
@@ -802,6 +879,7 @@ function Checkout() {
                     <label key={t}>
                       <input
                         type="radio"
+                        name="address-type"
                         checked={a.type === t}
                         onChange={() => setA({ ...a, type: t })}
                       />{" "}
@@ -831,9 +909,7 @@ function Checkout() {
             )}
           </section>
           <section className="co-step">
-            <h2>
-              <span>2</span> Order summary
-            </h2>
+            <h2>Order summary</h2>
             {step >= 2 && !placed && (
               <div className="co-items">
                 {lines.map((l) => {
@@ -891,7 +967,7 @@ function Checkout() {
           </section>
           <section className="co-step">
             <h2>
-              <span>3</span> Payment
+              <span>2</span> Review &amp; payment
             </h2>
             {step >= 2 && !placed && (
               <div className="co-pay">
@@ -915,9 +991,10 @@ function Checkout() {
                 </label>
                 {paymentMethod === "razorpay" ? (
                   <p className="text-sm text-muted-foreground" role="note">
-                    Use a UPI app on mobile or scan the UPI QR code on desktop. Entering a UPI ID
-                    is unavailable under current UPI rules. Available options depend on your device
-                    and Razorpay account. Your order is confirmed only after payment verification.
+                    UPI is processed by Razorpay. BIG-B does not store your payment credentials.
+                    Use a UPI app on mobile or scan the QR code on desktop; available options
+                    depend on your device and account. Your order is confirmed only after payment
+                    verification.
                   </p>
                 ) : (
                   <label>
@@ -966,10 +1043,11 @@ function Checkout() {
                           type="button"
                           className="co-change"
                           onClick={() => {
-                            if (!user) return;
+                            const userId = checkoutUserIdRef.current;
+                            if (!userId) return;
                             try {
                               localStorage.setItem(
-                                razorpayDismissedPendingKey(user.id),
+                                razorpayDismissedPendingKey(userId),
                                 activePaymentAttempt.orderId,
                               );
                               setDismissedPendingOrderId(activePaymentAttempt.orderId);
@@ -1005,8 +1083,10 @@ function Checkout() {
                   </p>
                 )}
                 {ready && !user && (
-                  <p className="product-pin-msg is-err">
-                    Please <AuthLink>sign in</AuthLink> to place your order so you can track it.
+                  <p className="product-muted">
+                    Guest checkout needs no account. Enter an email for order updates; your guest
+                    order history stays available in this browser until you sign out or clear its
+                    data.
                   </p>
                 )}
               </div>
@@ -1025,7 +1105,7 @@ function Checkout() {
                     Pay <b>{usd(placed.total)}</b> in cash when your{" "}
                     {placed.count > 1 ? `${placed.count} watches arrive` : "watch arrives"} in{" "}
                     {a.city}. We will call {a.mobile} to confirm before dispatch. Estimated
-                    delivery: 3–5 business days.
+                    delivery: 3–5 business days. Order updates will be sent to {a.email}.
                   </p>
                 )}
                 {placed.payment === "razorpay" && (
@@ -1084,19 +1164,12 @@ function Checkout() {
               <button
                 type="button"
                 className="product-buy co-price-continue"
-                onClick={() => setStep(3)}
-              >
-                Continue
-              </button>
-            )}
-            {step === 3 && (
-              <button
-                type="button"
-                className="product-buy co-price-continue"
                 disabled={
                   busy ||
                   checkingPayment ||
-                  !user ||
+                  !ready ||
+                  inventory.loading ||
+                  stock === null ||
                   hasUnavailableProduct ||
                   hasUnavailablePrice ||
                   short.length > 0 ||

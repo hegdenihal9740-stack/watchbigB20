@@ -5,7 +5,6 @@ import { watchImages, type WatchTone } from "@/lib/watches";
 import tryonArm from "@/assets/tryon-arm.webp";
 import { tryOnDemoImages } from "@/lib/try-on-demo-images";
 import { watches as watchList } from "@/lib/watches";
-import { SiteFooter } from "@/components/SiteFooter";
 import bigBLogoDark from "@/assets/big-b-logo-dark.png";
 import type {
   AmbientLight,
@@ -24,24 +23,33 @@ const VirtualTryOn = lazy(() =>
 );
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "BIG-B — The Watch Collection" },
-      {
-        name: "description",
-        content:
-          "A black-and-gold scroll experience where a private jet flies through a collection of precision watches.",
-      },
-      { property: "og:title", content: "BIG-B — The Watch Collection" },
-      {
-        property: "og:description",
-        content:
-          "A black-and-gold scroll experience where a private jet flies through a collection of precision watches.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => {
+    const heroImage = new URL(
+      watchImages.steel,
+      "https://big-b-watch-boutique.lovable.app",
+    ).href;
+    return {
+      meta: [
+        { title: "BIG-B — The Watch Collection" },
+        {
+          name: "description",
+          content:
+            "Shop the BIG-B watch collection: precision timepieces in steel, black, gold and rose gold, with secure checkout and free delivery.",
+        },
+        { property: "og:title", content: "BIG-B — The Watch Collection" },
+        {
+          property: "og:description",
+          content:
+            "Shop the BIG-B watch collection: precision timepieces in steel, black, gold and rose gold, with secure checkout and free delivery.",
+        },
+        { property: "og:image", content: heroImage },
+        { property: "og:type", content: "website" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: heroImage },
+      ],
+      links: [{ rel: "preload", as: "image", href: watchImages.steel, fetchPriority: "high" }],
+    };
+  },
   component: Index,
 });
 
@@ -81,21 +89,25 @@ function Index() {
 
   useEffect(() => {
     let disposed = false;
+    let idleCallback: number | undefined;
+    let fallbackTimer: number | undefined;
     const cleanups: Array<() => void> = [];
 
     const loadScene = async () => {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const gsapImport = reduceMotion ? undefined : import("gsap");
       const [THREE, { RoomEnvironment }] = await Promise.all([
         import("three"),
         import("three/examples/jsm/environments/RoomEnvironment.js"),
       ]);
       if (disposed) return;
-      const gsapImport = import("gsap");
       const watches = Array.from(rootRef.current?.querySelectorAll<HTMLImageElement>(".watch-img") ?? []);
       cleanups.push(() => watches.forEach(watch => watch.style.removeProperty("--watch-proximity")));
       const root = rootRef.current;
       const TONES: Record<string, number> = { steel: 0xb9c6cf, black: 0x3a3f46, gold: 0xd9b45a, rosegold: 0xe0a48e };
       const basePaint = new THREE.Color(0x181a20);
       const toneColor = new THREE.Color();
+      const targetColor = new THREE.Color();
       let tintMaterial: MeshPhysicalMaterial | null = null;
       const watchProximities = new Map<HTMLImageElement, number>();
       let activeTone = "";
@@ -112,10 +124,22 @@ function Index() {
         light: PointLight;
         softLight: AmbientLight;
         modelGroup: Group;
+        lastStyleValues = new WeakMap<HTMLElement, Map<string, string>>();
         w = 0;
         h = 0;
         aircraftSamples: Array<InstanceType<typeof THREE.Vector3>> = [];
         projectedSample = new THREE.Vector3();
+
+        setStyle = (element: HTMLElement, property: string, value: string) => {
+          let values = this.lastStyleValues.get(element);
+          if (!values) {
+            values = new Map();
+            this.lastStyleValues.set(element, values);
+          }
+          if (values.get(property) === value) return;
+          values.set(property, value);
+          element.style.setProperty(property, value);
+        };
 
         constructor(model: Group) {
           model.updateWorldMatrix(true, true);
@@ -231,8 +255,9 @@ function Index() {
               visible: this.projectedSample.z >= -1 && this.projectedSample.z <= 1,
             };
           });
-          watches.forEach(watch => {
-            const rect = watch.getBoundingClientRect();
+          const watchRects = watches.map(watch => watch.getBoundingClientRect());
+          watches.forEach((watch, index) => {
+            const rect = watchRects[index]!;
             let distance = Infinity;
             if (rect.bottom > 0 && rect.top < this.h) {
               for (const point of aircraftPixels) {
@@ -243,31 +268,32 @@ function Index() {
               }
             }
             const proximity = 1 - THREE.MathUtils.smoothstep(distance, 0, reach);
-            watch.style.setProperty("--watch-proximity", proximity.toFixed(3));
             watchProximities.set(watch, proximity);
           });
           // Spotlight + color sync: find the watch the jet is passing.
           let best: HTMLImageElement | null = null;
+          let bestRect: DOMRect | undefined;
           let bestProx = 0;
-          for (const watch of watches) {
+          for (let index = 0; index < watches.length; index += 1) {
+            const watch = watches[index]!;
             const p = watchProximities.get(watch) ?? 0;
-            if (p > bestProx) { bestProx = p; best = watch; }
+            if (p > bestProx) { bestProx = p; best = watch; bestRect = watchRects[index]; }
           }
           for (const watch of watches) {
             const own = watchProximities.get(watch) ?? 0;
-            watch.style.setProperty("--watch-dim", (bestProx * (1 - own)).toFixed(3));
+            this.setStyle(watch, "--watch-proximity", own.toFixed(3));
+            this.setStyle(watch, "--watch-dim", (bestProx * (1 - own)).toFixed(3));
           }
           const nose = aircraftPixels[aircraftPixels.length - 1];
           if (root) {
-            root.style.setProperty("--beam-strength", bestProx.toFixed(3));
+            this.setStyle(root, "--beam-strength", bestProx.toFixed(3));
             if (nose) {
-              root.style.setProperty("--beam-x", `${nose.x.toFixed(0)}px`);
-              root.style.setProperty("--beam-y", `${nose.y.toFixed(0)}px`);
+              this.setStyle(root, "--beam-x", `${nose.x.toFixed(0)}px`);
+              this.setStyle(root, "--beam-y", `${nose.y.toFixed(0)}px`);
             }
-            if (best) {
-              const r = best.getBoundingClientRect();
-              root.style.setProperty("--spot-x", `${(r.left + r.width / 2).toFixed(0)}px`);
-              root.style.setProperty("--spot-y", `${(r.top + r.height / 2).toFixed(0)}px`);
+            if (best && bestRect) {
+              this.setStyle(root, "--spot-x", `${(bestRect.left + bestRect.width / 2).toFixed(0)}px`);
+              this.setStyle(root, "--spot-y", `${(bestRect.top + bestRect.height / 2).toFixed(0)}px`);
               const tone = best.dataset['tone'] ?? "";
               if (bestProx > 0.15 && tone !== activeTone) {
                 activeTone = tone;
@@ -277,8 +303,8 @@ function Index() {
           }
           if (tintMaterial) {
             toneColor.set(TONES[activeTone] ?? 0xf0f3f3);
-            const target = basePaint.clone().lerp(toneColor, bestProx * 0.3);
-            tintMaterial.color.lerp(target, 0.08);
+            targetColor.copy(basePaint).lerp(toneColor, bestProx * 0.3);
+            tintMaterial.color.lerp(targetColor, 0.08);
           }
         };
 
@@ -301,7 +327,7 @@ function Index() {
       }
 
       async function setupAnimation(scene: Scene) {
-        if (disposed) return;
+        if (disposed || reduceMotion || !gsapImport) return;
         const { gsap } = await gsapImport;
         if (disposed) return;
         const plane = scene.modelGroup;
@@ -397,6 +423,7 @@ function Index() {
           if (!content || !showcase || !title) return;
           const start = content.getBoundingClientRect().top + window.scrollY;
           const end = showcase.getBoundingClientRect().top + window.scrollY;
+          const shouldHideJet = title.getBoundingClientRect().top <= window.innerHeight * 0.72;
           const progress = THREE.MathUtils.clamp(
             (window.scrollY - start) / Math.max(1, end - start),
             0,
@@ -404,7 +431,6 @@ function Index() {
           );
           timeline.progress(progress);
 
-          const shouldHideJet = title.getBoundingClientRect().top <= window.innerHeight * 0.72;
           if (shouldHideJet !== jetHidden) {
             jetHidden = shouldHideJet;
             gsap.to(jetCanvas, {
@@ -568,12 +594,28 @@ function Index() {
       });
     };
 
-    void loadScene().catch((error: unknown) => {
-      console.error("Could not load the homepage flight scene", error);
-    });
+    const startScene = () => {
+      idleCallback = undefined;
+      fallbackTimer = undefined;
+      if (disposed) return;
+      void loadScene().catch((error: unknown) => {
+        console.error("Could not load the homepage flight scene", error);
+      });
+    };
+    const requestIdle = Reflect.get(window, "requestIdleCallback");
+    if (typeof requestIdle === "function") {
+      idleCallback = requestIdle.call(window, startScene, { timeout: 800 });
+    } else {
+      fallbackTimer = window.setTimeout(startScene, 100);
+    }
 
     return () => {
       disposed = true;
+      if (idleCallback !== undefined) {
+        const cancelIdle = Reflect.get(window, "cancelIdleCallback");
+        if (typeof cancelIdle === "function") cancelIdle.call(window, idleCallback);
+      }
+      if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
       cleanups.forEach((fn) => fn());
     };
   }, []);
@@ -657,7 +699,6 @@ function Index() {
             </div>
           </section>
       </div>
-      <SiteFooter />
     </div>
   );
 }

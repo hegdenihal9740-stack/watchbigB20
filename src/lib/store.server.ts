@@ -328,7 +328,9 @@ export async function notifyStoreOrderStatus(
 
   return sendOrderNotifications({
     orderId: order.id,
-    email: account?.user?.email ?? null,
+    email:
+      account?.user?.email ??
+      (typeof address["email"] === "string" ? address["email"] : null),
     name: typeof address["name"] === "string" ? address["name"] : "Customer",
     mobile: typeof address["mobile"] === "string" ? address["mobile"] : "",
     total: order.total,

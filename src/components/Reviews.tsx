@@ -19,7 +19,7 @@ type Review = {
 const MAX_PHOTOS = 3;
 const MAX_BYTES = 5 * 1024 * 1024;
 
-export function Reviews({ tone, rating, total }: { tone: string; rating: number; total: number }) {
+export function Reviews({ tone }: { tone: string }) {
   const [list, setList] = useState<Review[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [stars, setStars] = useState(5);
@@ -28,8 +28,9 @@ export function Reviews({ tone, rating, total }: { tone: string; rating: number;
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const { user, ready } = useCustomer();
-  const signedIn = Boolean(user);
+  const signedIn = Boolean(user && !user.is_anonymous);
 
   const load = useCallback(async () => {
     try {
@@ -37,11 +38,13 @@ export function Reviews({ tone, rating, total }: { tone: string; rating: number;
         .from("reviews")
         .select("id,author,rating,comment,verified,created_at,photos")
         .eq("product_id", tone)
+        .eq("verified", true)
         .order("created_at", { ascending: false })
         .limit(20);
       if (error) throw error;
       const rows = data ?? [];
       setList(rows);
+      setLoadError(false);
       const paths = rows.flatMap((r) => r.photos ?? []);
       if (paths.length) {
         const { data: signed, error: imageError } = await supabase.storage
@@ -56,6 +59,7 @@ export function Reviews({ tone, rating, total }: { tone: string; rating: number;
       }
     } catch (error) {
       console.error("Could not load product reviews.", error);
+      setLoadError(true);
       toast.error("Reviews could not be loaded. Please try again.");
     }
   }, [tone]);
@@ -63,6 +67,7 @@ export function Reviews({ tone, rating, total }: { tone: string; rating: number;
     if (!isSupabaseConfigured()) {
       setList([]);
       setUrls({});
+      setLoadError(true);
       return;
     }
     void load();
@@ -95,6 +100,10 @@ export function Reviews({ tone, rating, total }: { tone: string; rating: number;
   };
 
   const submit = async () => {
+    if (!user || user.is_anonymous) {
+      toast.error("Sign in with a customer account to post a review.");
+      return;
+    }
     if (name.trim().length < 1) {
       toast.error("Please add your name");
       return;
@@ -153,30 +162,10 @@ export function Reviews({ tone, rating, total }: { tone: string; rating: number;
     }
   };
 
-  const bars = [5, 4, 3, 2, 1].map((s) => ({
-    s,
-    pct: s === 5 ? 62 : s === 4 ? 24 : s === 3 ? 8 : s === 2 ? 4 : 2,
-  }));
   return (
     <div className="product-section rv">
-      <h4>Ratings &amp; reviews</h4>
-      <div className="rv-summary">
-        <div className="rv-big">
-          <b>{rating}</b>
-          <Star size={18} fill="currentColor" />
-          <span className="product-muted">{total.toLocaleString("en-IN")} ratings</span>
-        </div>
-        <div className="rv-bars">
-          {bars.map((b) => (
-            <div key={b.s}>
-              <span>{b.s}★</span>
-              <i>
-                <em style={{ width: `${b.pct}%` }} />
-              </i>
-            </div>
-          ))}
-        </div>
-      </div>
+      <h4>Verified purchase reviews</h4>
+      <p className="product-muted">Only reviews linked to a BIG-B order are shown.</p>
       {!ready ? (
         <p className="product-muted">Checking your account…</p>
       ) : signedIn ? (
@@ -249,7 +238,13 @@ export function Reviews({ tone, rating, total }: { tone: string; rating: number;
         </div>
       ) : (
         <p className="product-muted">
-          <AuthLink>Sign in</AuthLink> to write a review.
+          {user?.is_anonymous ? (
+            "Guest checkout sessions cannot post reviews. Sign in with a customer account after your purchase."
+          ) : (
+            <>
+              <AuthLink>Sign in</AuthLink> with your customer account to write a review.
+            </>
+          )}
         </p>
       )}
       <ul className="rv-list">
@@ -260,11 +255,9 @@ export function Reviews({ tone, rating, total }: { tone: string; rating: number;
                 {r.rating} <Star size={10} fill="currentColor" />
               </span>{" "}
               <b>{r.author}</b>
-              {r.verified && (
-                <span className="rv-ver">
-                  <BadgeCheck size={13} /> Verified buyer
-                </span>
-              )}
+              <span className="rv-ver">
+                <BadgeCheck size={13} /> Verified buyer
+              </span>
             </p>
             <p>{r.comment}</p>
             {r.photos?.length > 0 && (
@@ -294,7 +287,11 @@ export function Reviews({ tone, rating, total }: { tone: string; rating: number;
             </p>
           </li>
         ))}
-        {!list.length && <li className="product-muted">No written reviews yet — be the first.</li>}
+        {loadError ? (
+          <li className="product-muted" role="alert">Verified reviews are unavailable right now.</li>
+        ) : !list.length ? (
+          <li className="product-muted">No verified written reviews yet.</li>
+        ) : null}
       </ul>
       <Dialog open={!!zoom} onOpenChange={(o) => !o && setZoom(null)}>
         <DialogContent>

@@ -17,6 +17,7 @@ const lineSchema = z.object({
 
 const addressSchema = z.object({
   name: z.string().trim().min(1).max(100),
+  email: z.string().trim().email().max(254),
   mobile: z.string().regex(/^[6-9]\d{9}$/),
   address: z.string().trim().min(1).max(500),
   locality: z.string().max(150).optional(),
@@ -41,7 +42,8 @@ export const createCodOrder = createServerFn({ method: "POST" })
       data.items,
       data.address,
       context.supabase,
-      typeof context.claims["email"] === "string" ? context.claims["email"] : null,
+      data.address.email ??
+        (typeof context.claims["email"] === "string" ? context.claims["email"] : null),
     ),
   );
 
@@ -58,7 +60,8 @@ export const createRazorpayPaymentOrder = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) =>
     createRazorpayPaymentOrderOnServer(
       context.userId,
-      typeof context.claims["email"] === "string" ? context.claims["email"] : null,
+      data.address.email ??
+        (typeof context.claims["email"] === "string" ? context.claims["email"] : null),
       data.items,
       data.address,
       data.idempotencyKey,

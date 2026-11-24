@@ -1,8 +1,6 @@
 import {
   ShoppingCart,
   Zap,
-  Star,
-  Tag,
   ShieldCheck,
   RotateCcw,
   Truck,
@@ -10,17 +8,17 @@ import {
   Heart,
   MessageCircle,
 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { useWishlist, wishlist } from "@/lib/wishlist";
 import { useStock, stockLabel } from "@/lib/inventory";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
 import { whatsappLink } from "@/lib/whatsapp";
 import { Reviews } from "@/components/Reviews";
-import { useCustomer } from "@/components/CustomerAccounts";
-import steelJpg from "@/assets/watch-steel.jpg";
-import blackJpg from "@/assets/watch-black.jpg";
-import goldJpg from "@/assets/watch-gold.jpg";
-import roseJpg from "@/assets/watch-rosegold.jpg";
+import steelJpg from "@/assets/watch-steel-gallery.webp";
+import blackJpg from "@/assets/watch-black-gallery.webp";
+import goldJpg from "@/assets/watch-gold-gallery.webp";
+import roseJpg from "@/assets/watch-rosegold-gallery.webp";
 import steelTry from "@/assets/try-on-steel.webp";
 import blackTry from "@/assets/try-on-black.webp";
 import goldTry from "@/assets/try-on-gold.webp";
@@ -92,7 +90,6 @@ const galleryThumbByImage: Record<string, string> = {
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { cart, getProductPrice } from "@/lib/cart";
 import { watchImages, watches, type WatchTone } from "@/lib/watches";
-import { createAuthEntryPath, saveBrowserOAuthReturnPath } from "@/lib/auth-redirect";
 
 const usd = (n: number) => n.toLocaleString("en-IN");
 const isCaseSizeSpec = (spec: string) =>
@@ -113,33 +110,39 @@ export function ProductDetails({
   onBuy?: (id: WatchTone) => void;
   onSelectWatch?: (id: WatchTone) => void;
 }) {
-  const { user: customer } = useCustomer();
   const Title = asPage ? "h1" : DialogTitle;
   const Desc = asPage ? "p" : DialogDescription;
   const [pick, setPick] = useState<WatchTone | null>(null);
   const active = pick ?? tone;
   const m = cardMeta[active];
   const w = watches.find((x) => x.id === active)!;
-  const specs = m.specs.flatMap((value, index) =>
-    isCaseSizeSpec(value) ? [] : [{ label: index === 2 ? "Movement" : "Feature", value }],
+  const specs = w.details.flatMap((value) =>
+    isCaseSizeSpec(value) ? [] : [{ label: "Feature", value }],
   );
+  const caseSizeSpec = w.details.find(isCaseSizeSpec);
+  const waterResistanceSpec = w.details.find((spec) => /water resistant/i.test(spec));
   const productImages =
     "images" in w && Array.isArray(w.images)
       ? w.images.filter((image): image is string => typeof image === "string" && image.length > 0)
       : [];
-  const stock = useStock();
+  const inventory = useStock();
+  const stock = inventory.data;
   const left = stock?.[active];
   const price = getProductPrice(w.id);
-  const sold = price === undefined || (left !== undefined && left <= 0);
+  const sold =
+    price === undefined ||
+    inventory.loading ||
+    stock === null ||
+    left === undefined ||
+    left <= 0;
   const priceLabel = price === undefined ? "Price unavailable" : `₹${usd(price)}`;
   const wish = useWishlist();
-  const imgs = productImages.length
-    ? productImages
-    : [
-        w.image,
-        ...(life[w.id] ? [life[w.id]!] : []),
-        ...(extra[w.id] ?? []),
-      ];
+  const defaultImages = [
+    w.image,
+    ...(life[w.id] ? [life[w.id]!] : []),
+    ...(extra[w.id] ?? []),
+  ];
+  const imgs = [...new Set([...productImages, ...defaultImages])];
   const [idx, setIdx] = useState(0);
   const [zoom, setZoom] = useState(false);
   const isNearSlide = (i: number) => {
@@ -147,11 +150,7 @@ export function ProductDetails({
     return distance <= 1 || distance === imgs.length - 1;
   };
   const off = price === undefined ? 0 : Math.round((1 - price / m.list) * 100);
-  const deliveryDate = new Date(Date.now() + 3 * 86400000).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  const deliveryEstimate = "3–5 business days";
   const [pincode, setPincode] = useState("");
   const [pinMsg, setPinMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const checkPincode = () => {
@@ -159,24 +158,22 @@ export function ProductDetails({
       setPinMsg({ ok: false, text: "Please enter a valid 6-digit pincode" });
       return;
     }
-    const days = 2 + (Number(pincode[5]) % 4);
-    const date = new Date(Date.now() + days * 86400000).toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
+    setPinMsg({
+      ok: true,
+      text: `Free delivery to ${pincode} in 3–5 business days. Remote areas may take up to 7 business days.`,
     });
-    setPinMsg({ ok: true, text: `Delivery to ${pincode} by ${date} · Free delivery available` });
   };
   const table: [string, string][] = [
     ["Model Name", `BIG-B ${w.name}`],
-    ["Dial Color", w.details[0]],
     ["Strap / Case Finish", w.finish],
-    ["Case Thickness", "11.5 mm"],
-    ["Strap Width", "20 mm"],
-    ["Water Resistance", "100 m"],
+    ...(caseSizeSpec ? [["Case Size", caseSizeSpec] as [string, string]] : []),
+    ...(waterResistanceSpec
+      ? [["Water Resistance", waterResistanceSpec] as [string, string]]
+      : []),
     ["Display Type", "Analog"],
-    ["Ideal For", "Men"],
-    ...specs.map(({ label, value }) => [label, value] as [string, string]),
+    ...specs
+      .filter(({ value }) => value !== waterResistanceSpec)
+      .map(({ label, value }) => [label, value] as [string, string]),
     ["Warranty", "2 Years manufacturer warranty"],
   ];
   useEffect(() => {
@@ -214,23 +211,63 @@ export function ProductDetails({
   const actionsRef = useRef<HTMLDivElement>(null);
 
   const [showSticky, setShowSticky] = useState(true);
+  const stickyAvailability =
+    price === undefined
+      ? "Price unavailable"
+      : inventory.loading
+        ? "Checking availability…"
+        : stock === null || left === undefined
+          ? "Stock status unavailable"
+          : left <= 0
+            ? "Out of stock"
+            : `${off}% off · Free delivery`;
   useEffect(() => {
     const el = actionsRef.current;
     if (!el || !asPage) return;
-    const io = new IntersectionObserver(([e]) => setShowSticky(!e!.isIntersecting));
-    io.observe(el);
-    return () => io.disconnect();
+    let frame = 0;
+    const updateVisibility = () => {
+      frame = 0;
+      const mobile = window.matchMedia("(max-width: 768px)").matches;
+      const nav = mobile ? document.querySelector<HTMLElement>(".bnav") : null;
+      const navTop =
+        nav && getComputedStyle(nav).display !== "none"
+          ? nav.getBoundingClientRect().top
+          : window.innerHeight;
+      const stickyBar = document.querySelector<HTMLElement>(".product-sticky");
+      const stickyBounds = stickyBar?.getBoundingClientRect();
+      const stickyBottom = stickyBounds?.bottom ?? (mobile ? navTop - 6 : window.innerHeight - 20);
+      const stickyTop = stickyBounds?.top ?? stickyBottom - (mobile ? 64 : 68);
+      const actionsBounds = el.getBoundingClientRect();
+      const footer = document.querySelector<HTMLElement>(".site-footer");
+      const footerBounds = footer?.getBoundingClientRect();
+      const actionsFullyVisible =
+        actionsBounds.top >= 0 && actionsBounds.bottom <= stickyTop;
+      const footerOverlapsStickyBar = Boolean(
+        footerBounds &&
+          footerBounds.top < stickyBottom &&
+          footerBounds.bottom > stickyTop,
+      );
+      setShowSticky(!actionsFullyVisible && !footerOverlapsStickyBar);
+    };
+    const scheduleUpdate = () => {
+      if (!frame) frame = window.requestAnimationFrame(updateVisibility);
+    };
+    const page = el.closest<HTMLElement>(".shop-page");
+    const resizeObserver = new ResizeObserver(scheduleUpdate);
+    if (page) resizeObserver.observe(page);
+    scheduleUpdate();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    };
   }, [asPage]);
   const buyNow = () => {
     if (price === undefined) {
       toast.error("This watch's price is unavailable. Please refresh the collection.");
-      return;
-    }
-    if (!customer) {
-      toast.info("Please log in to continue with your purchase");
-      const returnPath = `/shop/${encodeURIComponent(w.id)}`;
-      saveBrowserOAuthReturnPath(returnPath);
-      window.location.assign(createAuthEntryPath(returnPath));
       return;
     }
     if (onBuy) {
@@ -283,13 +320,13 @@ export function ProductDetails({
                 <div className="product-slider" ref={sliderRef} onScroll={onSlide}>
                   {imgs.map((src, i) => (
                     <div
-                      key={src}
+                      key={`${i}-${src}`}
                       className={`product-imgbox product-slide is-zoomable ${i === idx ? "is-active" : ""} ${i === idx && zoom ? "is-zoomed" : ""}`}
                       onClick={() => toggleImageZoom(i)}
                     >
                       <img
                         src={src}
-                        alt={w.name}
+                        alt={`${w.name} — product photo ${i + 1} of ${imgs.length}`}
                         draggable={false}
                         loading={isNearSlide(i) ? "eager" : "lazy"}
                         fetchPriority={i === idx ? "high" : "auto"}
@@ -298,7 +335,7 @@ export function ProductDetails({
                     </div>
                   ))}
                 </div>
-                <div className="product-dots">
+                <div className="product-dots" aria-hidden="true">
                   {imgs.map((src, i) => (
                     <span key={src} className={i === idx ? "is-on" : ""} />
                   ))}
@@ -308,8 +345,10 @@ export function ProductDetails({
                 {imgs.map((src, i) => (
                   <button
                     type="button"
-                    key={src}
+                    key={`${i}-${src}`}
                     className={`product-thumb ${i === idx ? "is-active" : ""}`}
+                    aria-label={`View ${w.name} photo ${i + 1} of ${imgs.length}`}
+                    aria-pressed={i === idx}
                     onClick={() => slideTo(i)}
                   >
                     <img
@@ -325,13 +364,7 @@ export function ProductDetails({
             <div className="product-right">
               <p className="product-brand">BIG-B · {w.finish}</p>
               <Title className="product-title">{w.name}</Title>
-              <p className="product-subtitle">{w.details[0]} · analog automatic</p>
-              <div className="product-rating-row">
-                <span className="product-rating-chip">
-                  {m.rating} <Star size={11} fill="currentColor" />
-                </span>
-                <span className="product-muted">{usd(m.reviews)} ratings &amp; reviews</span>
-              </div>
+              <p className="product-subtitle">{w.details.slice(0, 2).join(" · ")}</p>
               <p className="product-special">Special Price</p>
               <div className="product-price-row">
                 <span className="product-price">{priceLabel}</span>
@@ -365,7 +398,7 @@ export function ProductDetails({
                 <div className="product-delivery-row">
                   <Truck size={16} />
                   <span>
-                    Delivery by <b>{deliveryDate}</b>{" "}
+                    Estimated delivery <b>{deliveryEstimate}</b>{" "}
                     <span className="product-delivery-free">| Free</span>
                   </span>
                 </div>
@@ -382,17 +415,23 @@ export function ProductDetails({
                   </span>
                 </div>
               </div>
-              {left !== undefined && (
+              {inventory.loading ? (
+                <p className="product-muted" role="status">Checking current stock…</p>
+              ) : stock === null ? (
+                <p className="product-pin-msg is-err" role="alert">
+                  Current stock could not be checked. Please retry or contact BIG-B before ordering.
+                </p>
+              ) : (
                 <p
                   className={
                     sold
                       ? "product-pin-msg is-err"
-                      : left <= 3
+                      : left !== undefined && left <= 3
                         ? "product-pin-msg is-err"
                         : "product-pin-msg is-ok"
                   }
                 >
-                  {stockLabel(left)}
+                  {left === undefined ? "Stock status unavailable" : stockLabel(left)}
                 </p>
               )}
               <div className="product-actions" ref={actionsRef}>
@@ -413,16 +452,16 @@ export function ProductDetails({
               >
                 <MessageCircle size={16} /> Ask or order on WhatsApp
               </a>
-              {asPage && showSticky && !sold && (
+              {asPage && showSticky && (
                 <div className="product-sticky">
                   <span className="product-sticky-price">
-                    <b>₹{usd(price)}</b>
-                    <small>{off}% off · Free delivery</small>
+                    <b>{priceLabel}</b>
+                    <small aria-live="polite">{stickyAvailability}</small>
                   </span>
-                  <button type="button" className="product-cart" onClick={addCart}>
+                  <button type="button" className="product-cart" disabled={sold} onClick={addCart}>
                     Add to cart
                   </button>
-                  <button type="button" className="product-buy" onClick={buyNow}>
+                  <button type="button" className="product-buy" disabled={sold} onClick={buyNow}>
                     Buy now
                   </button>
                 </div>
@@ -431,7 +470,7 @@ export function ProductDetails({
                 <div className="product-trust-card t-green">
                   <Truck size={22} />
                   <b>Free Delivery</b>
-                  <span>By {deliveryDate}</span>
+                  <span>{deliveryEstimate}</span>
                 </div>
                 <div className="product-trust-card t-blue">
                   <RotateCcw size={22} />
@@ -445,7 +484,7 @@ export function ProductDetails({
                 </div>
               </div>
               <div className="product-assure">
-                <ShieldCheck size={16} /> 100% Genuine · Secure payments · Cash on delivery
+                <ShieldCheck size={16} /> UPI payments are processed by Razorpay. Payment is verified before an online order is confirmed.
               </div>
               <div className="product-section">
                 <h4>The story</h4>
@@ -454,38 +493,37 @@ export function ProductDetails({
               <div className="product-section">
                 <h4>Highlights</h4>
                 <ul className="product-highlights">
-                  {[...w.details, ...specs.map(({ value }) => value)].map((d) => (
-                    <li key={d}>{d}</li>
+                  {w.details.map((d, i) => (
+                    <li key={`${i}-${d}`}>{d}</li>
                   ))}
                 </ul>
               </div>
               <div className="product-section">
-                <h4>Privileges</h4>
-                <ul className="product-offers">
-                  <li>
-                    <Tag size={14} /> 5% cashback on credit cards
-                  </li>
-                  <li>
-                    <Tag size={14} /> Complimentary engraving this week
-                  </li>
-                </ul>
+                <h4>Shipping &amp; returns</h4>
+                <p className="product-desc">
+                  Free delivery and a 7-day replacement policy. Review the details before ordering.
+                </p>
+                <div className="product-policy-links">
+                  <Link to="/shipping-policy">Shipping policy</Link>
+                  <Link to="/returns">Returns &amp; refunds</Link>
+                </div>
               </div>
               <div className="product-section">
                 <h4>Specifications</h4>
                 <dl className="product-table">
-                  {table.map(([k, v]) => (
-                    <div key={k + v}>
+                  {table.map(([k, v], i) => (
+                    <div key={`${i}-${k}-${v}`}>
                       <dt>{k}</dt>
                       <dd>{v}</dd>
                     </div>
                   ))}
                 </dl>
               </div>
-              <Reviews tone={active} rating={m.rating} total={m.reviews} />
+              <Reviews tone={active} />
               <div className="product-section">
                 <h4>You may also like</h4>
                 <div className="product-recs">
-                  {watches
+                  {[...new Map(watches.map((watch) => [watch.id, watch])).values()]
                     .filter((r) => r.id !== active)
                     .map((r) => (
                       <button

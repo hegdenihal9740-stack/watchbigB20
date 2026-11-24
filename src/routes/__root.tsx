@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
   type ErrorComponentProps,
@@ -13,6 +14,7 @@ import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { CartDrawer } from "@/components/CartDrawer";
 import { CustomerAccounts } from "@/components/CustomerAccounts";
+import { SiteFooter } from "@/components/SiteFooter";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
@@ -126,6 +128,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   useEffect(() => {
     const stylesheet = document.createElement("link");
@@ -167,6 +170,7 @@ function RootComponent() {
       <CustomerAccounts>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
+      {pathname !== "/" && <SiteFooter pathname={pathname} />}
       <CartDrawer />
       <Toaster />
       </CustomerAccounts>

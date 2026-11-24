@@ -10,7 +10,7 @@ export const Route = createFileRoute('/privacy')({
     <h3>How we use it</h3>
     <p>We use this information to manage your account, process and deliver orders, provide customer support, and meet applicable legal requirements.</p>
     <h3>Storage and sharing</h3>
-    <p>Some shopping preferences may be stored in your browser. Account and order information may be processed by the services that operate those features and shared with delivery providers as needed to fulfill an order. We do not sell your personal information.</p>
+    <p>Some shopping preferences may be stored in your browser. Guest checkout creates a temporary account so you can view and track the order in the same browser; signing out or clearing browser data can remove your access to that guest order history. Account and order information may be processed by the services that operate those features and shared with delivery providers as needed to fulfill an order. We do not sell your personal information.</p>
     <h3>Your choices</h3>
     <p>You may contact us to ask about, correct or request deletion of your personal information, subject to records we must retain by law.</p>
     <h3>Contact</h3>

@@ -181,6 +181,7 @@ function parsePaymentAddress(value: unknown): PaymentAddress {
   };
   return validateAddress({
     name: expectString(address["name"], "Payment order contains invalid delivery details."),
+    email: optionalString("email"),
     mobile: expectString(address["mobile"], "Payment order contains invalid delivery details."),
     address: expectString(address["address"], "Payment order contains invalid delivery details."),
     city: expectString(address["city"], "Payment order contains invalid delivery details."),
@@ -265,6 +266,7 @@ function sameAddress(storedValue: unknown, submitted: PaymentAddress): boolean {
   if (!isRecord(storedValue)) return false;
   const fields: (keyof PaymentAddress)[] = [
     "name",
+    "email",
     "mobile",
     "address",
     "locality",
@@ -352,7 +354,9 @@ async function notifyPaidRazorpayOrder(orderId: string) {
   const items = parseAttemptItems(order.items);
   const notice = {
     orderId,
-    email: account?.user?.email ?? null,
+    email:
+      account?.user?.email ??
+      (typeof address["email"] === "string" ? address["email"] : null),
     name: address["name"],
     mobile: address["mobile"],
     total: order.total,
@@ -402,7 +406,7 @@ async function responseForExistingPayment(
     razorpayOrderId: attempt.razorpay_order_id,
     amount: attempt.total * 100,
     currency: attempt.currency,
-    email,
+    email: address.email ?? email,
     name: address.name,
     mobile: address.mobile,
   };
